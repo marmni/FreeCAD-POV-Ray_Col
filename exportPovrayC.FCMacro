@@ -5,9 +5,10 @@ from PySide import QtCore, QtGui
 import os
 
 
-def meshFace(shape):
+def meshFace(shape, tess):
     faces = []
-    triangles = shape.tessellate(1) # the number represents the precision of the tessellation
+   # triangles = shape.tessellate(1) # the number represents the precision of the tessellation
+    triangles = shape.tessellate(tess) # the number represents the precision of the tessellation
     for tri in triangles[1]:
         face = []
         for i in range(3):
@@ -19,7 +20,27 @@ def meshFace(shape):
     return m
 
 
-def exportToPOVRAY(fileName, projectObjects):
+#def meshFace(face, tess):
+#    u =100
+#    v = 80
+#    (a,b,c,d)=face.ParameterRange
+#    pts=[]
+#    for j in range(v):
+#        for i in range(u):
+#            s=1.0/(u-1)*(i*b+(u-1-i)*a)
+#            t=1.0/(v-1)*(j*d+(v-1-j)*c)
+#            pts.append(face.valueAt(s,t))
+#
+#    mesh=Mesh.Mesh()
+#    for j in range(v-1):
+#        for i in range(u-1):
+#            mesh.addFacet(pts[u*j+i],pts[u*j+i+1],pts[u*(j+1)+i])
+#            mesh.addFacet(pts[u*(j+1)+i],pts[u*j+i+1],pts[u*(j+1)+i+1])
+#    return mesh
+
+
+
+def exportToPOVRAY(fileName, projectObjects, tessellate=0.01,smoothTriangles=True,meshType=1):
     outPutString = ""
     #
     for i in projectObjects:  # objects in document
@@ -32,56 +53,113 @@ def exportToPOVRAY(fileName, projectObjects):
         if len(i.Shape.Faces) == 0:
             continue
         
-        outPutString += "mesh2 {\n"
+
         ##################
         indexList = []
         vertexList = []
+        normalList = []
         colorsDeclaration = {}
+        pointsData = {}
         nr = 0
-        for j in range(len(i.Shape.Faces)):
-            # get face color
-            if len(objectColors) == len(i.Shape.Faces):
-                modelType = objectColors[j]
-            else:
-                modelType = objectColors[0]
-            
-            if not modelType in colorsDeclaration:
-                colorsDeclaration[modelType] = []
-            ######
-            mesh = meshFace(i.Shape.Faces[j])
+        ##################
 
-            for pp in mesh.Facets:
-                colorsDeclaration[modelType].append(nr)
-                nr += 1
+        if meshType == 1:
+
+            for j in range(len(i.Shape.Faces)):
+                outPutString += "mesh {\n"
+                # get face color
+                if len(objectColors) == len(i.Shape.Faces):
+                    modelType = objectColors[j]
+                else:
+                    modelType = objectColors[0]
+                ######
+                mesh = meshFace(i.Shape.Faces[j], tessellate)
+            
+                for pp in mesh.Facets:
+                    dat = []
+                    nr += 1
+                    num = len(vertexList)
+                    for kk in pp.Points:
+                        dat.append( "<{0}, {1}, {2}>".format(kk[0], kk[1], -kk[2]))
                 
-                num = len(vertexList)
-                for kk in pp.Points:
-                    vertexList.append("\t<{0}, {1}, {2}>".format(kk[0], kk[1], -kk[2]))
-                indexList.append([num, num + 1, num + 2])
-        #
-        outPutString += "vertex_vectors {\n"
-        outPutString += "\t{0},\n".format(len(vertexList))
-        outPutString += (',\n').join(vertexList)
-        outPutString += "\n}\n\n"
-        ##################
-        outPutString += "texture_list {\n"
-        outPutString += "\t{0},\n".format(len(colorsDeclaration.keys()))
-        
-        for j in colorsDeclaration.keys():
-            outPutString += "\ttexture{pigment{rgb <%.2f, %.2f, %.2f>}}\n" % (j[0], j[1], j[2])
-        
-        outPutString += "}\n"
-        ##################
-        outPutString += "face_indices {\n"
-        outPutString += "\t{0},\n".format(len(vertexList) / 3)
-        for i in range(len(indexList)):
-            faceColor = [k for k, l in colorsDeclaration.items() if i in l]
-            faceColor = colorsDeclaration.keys().index(faceColor[0])
-            outPutString += "\t<{0}, {1}, {2}>, {3}, \n".format(indexList[i][0], indexList[i][1], indexList[i][2], faceColor)
-        
-        outPutString += "}\n"
-        ##################
-        outPutString += "\n}\n"
+                    outPutString += "triangle {\n"
+                    outPutString += (',').join(dat)
+                    outPutString += "\n}\n\n"
+                
+                outPutString += "texture {\n"
+                outPutString += "pigment { color rgb<%.2f, %.2f, %.2f> }\n" % (modelType[0], modelType[1], modelType[2])
+                outPutString += "finish { ambient 0.2 diffuse 0.7 }\n"
+                outPutString += "   }\n"
+
+                outPutString += "\n}\n"
+            ##################
+        else:
+            outPutString += "mesh2 {\n"
+            ##################
+            for j in range(len(i.Shape.Faces)):
+                # get face color
+                if len(objectColors) == len(i.Shape.Faces):
+                    modelType = objectColors[j]
+                else:
+                    modelType = objectColors[0]
+                
+                if not modelType in colorsDeclaration:
+                    colorsDeclaration[modelType] = []
+                ######
+                mesh = meshFace(i.Shape.Faces[j], tessellate)
+
+                for pp in mesh.Points:
+                    x = pp.Normal.x
+                    y = pp.Normal.y
+                    z = pp.Normal.z
+                    pointsData["[{0}, {1}, {2}]".format(pp.x, pp.y, -pp.z)] ="\t<{0}, {1}, {2}>".format(x, y, -z)
+                    # pointsData["[{0}, {1}, {2}]".format(pp.x, pp.y, -pp.z)] ="\t<{0}, {1}, {2}>".format(pp.Normal.x, pp.Normal.y, pp.Normal.z)
+                    #FreeCAD.Console.PrintWarning("{0} \n".format(pp.Normal))
+
+
+                for pp in mesh.Facets:
+                    colorsDeclaration[modelType].append(nr)
+                    nr += 1
+                    
+                    num = len(vertexList)
+                    for kk in pp.Points:
+
+                        normalList.append(pointsData["[{0}, {1}, {2}]".format(kk[0], kk[1], -kk[2])])
+                        vertexList.append("\t<{0}, {1}, {2}>".format(kk[0], kk[1], -kk[2]))
+                    indexList.append([num, num + 1, num + 2])
+
+            #
+            outPutString += "vertex_vectors {\n"
+            outPutString += "\t{0},\n".format(len(vertexList))
+            outPutString += (',\n').join(vertexList)
+            outPutString += "\n}\n\n"
+
+            if smoothTriangles:
+                outPutString += "normal_vectors {\n"
+                outPutString += "\t{0},\n".format(len(normalList))
+                outPutString += (',\n').join(normalList)
+                outPutString += "\n}\n\n"
+                  
+            ##################
+            outPutString += "texture_list {\n"
+            outPutString += "\t{0},\n".format(len(colorsDeclaration.keys()))
+            
+            for j in colorsDeclaration.keys():
+                outPutString += "\ttexture{pigment{rgb <%.2f, %.2f, %.2f>}}\n" % (j[0], j[1], j[2])
+            
+            outPutString += "}\n"
+            ##################
+            outPutString += "face_indices {\n"
+            outPutString += "\t{0},\n".format(len(vertexList) / 3)
+            for i in range(len(indexList)):
+                faceColor = [k for k, l in colorsDeclaration.items() if i in l]
+                faceColor = colorsDeclaration.keys().index(faceColor[0])
+                outPutString += "\t<{0}, {1}, {2}>, {3}, \n".format(indexList[i][0], indexList[i][1], indexList[i][2], faceColor)
+            
+            outPutString += "}\n"
+            ##################
+            outPutString += "\n}\n"
+
 
     plik = __builtin__.open(fileName, "w")
     plik.write('''     // Persistence of Vision Ray Tracer Scene Description File
@@ -120,15 +198,445 @@ def exportToPOVRAY(fileName, projectObjects):
     center = Part.makeCompound([i.Shape for i in projectObjects if hasattr(i, "Shape")]).BoundBox.Center
 
     cam = FreeCADGui.ActiveDocument.ActiveView.getCameraNode()
-    camPos = cam.position.getValue()
-    Cx = "%.4f" % (camPos[0])
-    Cy = "%.4f" % (camPos[1])
-    Cz = "%.4f" % (-camPos[2])
+    camPos = [float(i) for i in  cam.position.getValue() if i != ""]
+    Cx = camPos[0]
+    Cy = camPos[1]
+    Cz =-camPos[2]
 
     camOr = str(cam.orientation.getValue().toString()).split(' ')
+    camOr = [float(i) for i in  camOr if i != ""]
+#    FreeCAD.Console.PrintWarning("camOr[0]: {0} \n".format(camOr[0]))
+#    FreeCAD.Console.PrintWarning("camOr[1]: {0} \n".format(camOr[1]))
+#    FreeCAD.Console.PrintWarning("camOr[2]: {0} \n".format(camOr[2]))
+#    FreeCAD.Console.PrintWarning("camOr[4]: {0} \n\n".format(camOr[4]))
+#    sky1 = camOr[0]
+#    sky2 = camOr[1]
+#    sky3 = camOr[2]
+#    sky4 = camOr[3]
+
     sky1 = camOr[0]
     sky2 = camOr[1]
     sky3 = camOr[2]
+
+    if camOr[0] > 0:
+        if camOr[1] > 0:
+            if camOr[2] > 0:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0]
+                                sky2 = 0
+                                sky3 = -camOr[2] - 1
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+            else:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = -camOr[0] - 1
+                                sky2 = -camOr[1] - 1
+                                sky3 = -camOr[2] 
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                sky1 = -camOr[0] - 1
+                                sky2 = 0
+                                sky3 = -camOr[2] + 1
+                            else:
+                                pass
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+        else:
+            if camOr[2] > 0:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0]
+                                sky2 = -camOr[1]  + 1
+                                sky3 = camOr[2] + 1
+                            else:
+                                sky1 = camOr[0] + 1
+                                sky2 = -camOr[1] + 1
+                                sky3 = -camOr[2] - 1
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+            else:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = -camOr[0] - 1
+                                sky2 = camOr[1] - 1
+                                sky3 = -camOr[2] + 1
+                            else:
+                                sky1 = -camOr[0] - 1
+                                sky2 = -camOr[1]
+                                sky3 = camOr[2] - 1
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                sky1 = -camOr[0] - 1
+                                sky2 = -camOr[1]
+                                sky3 = camOr[2] - 1
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+    else:  # camOr[0] < 0
+        if camOr[1] > 0:
+            if camOr[2] > 0:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0] - 1
+                                sky2 = camOr[1]
+                                sky3 = camOr[2] + 1
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0] - 1
+                                sky2 = -1
+                                sky3 = 1
+                            else:
+                                sky1 = camOr[0] - 1
+                                sky2 = 0
+                                #sky3 = -camOr[2] - 1
+                                sky3 = 1
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+            else:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                               sky1 = camOr[0]
+                               sky2 = camOr[1] + 1
+                               sky3 = -camOr[2]
+                            else:
+                                #sky1 = camOr[0]
+                                #sky2 = camOr[1] + 1
+                                #sky3 = camOr[2]  - 1
+                                sky1 = camOr[0] - 1
+                                sky2 = camOr[1] + 1
+                                sky3 = 0
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+        else:
+            if camOr[2] > 0:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = -camOr[0] - 1
+                                sky2 = 0
+                                sky3 = -camOr[2] - 1
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0]
+                                sky2 = 0
+                                sky3 = camOr[2]
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                sky1 = camOr[0] 
+                                sky2 = -camOr[1] + 1
+                                sky3 = camOr[2] + 1
+                            else:
+                                pass
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+            else:
+                if camOr[3] > 0:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                else:
+                    if camPos[0] > 0:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                    else:
+                        if camPos[1] > 0:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+                        else:
+                            if camPos[2] > 0:
+                                pass
+                            else:
+                                pass
+
 
 
     plik.write(''' // Generated by FreeCAD (http://www.freecadweb.org/)
@@ -167,15 +675,61 @@ class exportToPovrayColorsGui(QtGui.QWidget):
         QtGui.QWidget.__init__(self, parent)
         #
         self.form = self
-        self.form.setWindowTitle(u"Export to Povray with colors")
+        self.form.setWindowTitle(u"Export to Povray with colors v1.2")
         #
         tab = QtGui.QTabWidget()
         tab.addTab(self.tabGeneral(), u'General')
+        tab.addTab(self.tabSettings(), u'Settings')
         #
         lay = QtGui.QVBoxLayout(self)
         lay.addWidget(tab)
         #
-    
+
+    def tabSettings(self):
+        self.meshTessellate = QtGui.QDoubleSpinBox()
+        self.meshTessellate.setValue(0.01)
+        self.meshTessellate.setRange(0.0, 1000.0)
+
+        meshBox = QtGui.QGroupBox(u'Mesh')
+        meshBoxLay = QtGui.QGridLayout(meshBox)
+        meshBoxLay.addWidget(QtGui.QLabel(u' Tessellation          '), 0, 0, 1, 1)
+        meshBoxLay.addWidget(self.meshTessellate, 0, 1, 1, 2)
+
+        meshBoxLay.setColumnStretch(1, 10)
+
+        #####
+        self.povraySmoothTriangles = QtGui.QCheckBox(u"Smooth triangles ")
+        self.povraySmoothTriangles.setChecked(True)
+
+        self.povrayMesh = QtGui.QRadioButton(u"Mesh")
+        self.connect(self.povrayMesh, QtCore.SIGNAL("released ()"), self.changeMeshType)
+
+        self.povrayMesh2 = QtGui.QRadioButton(u"Mesh2")
+        self.povrayMesh2.setChecked(True)
+        self.connect(self.povrayMesh2, QtCore.SIGNAL("released ()"), self.changeMeshType)
+        
+        povrayBox = QtGui.QGroupBox(u'POV-Ray')
+        povrayBoxLay = QtGui.QGridLayout(povrayBox)
+        povrayBoxLay.addWidget(self.povraySmoothTriangles, 0, 0, 1, 2)
+        povrayBoxLay.addWidget(self.povrayMesh, 1, 0, 1, 1)
+        povrayBoxLay.addWidget(self.povrayMesh2, 1, 1, 1, 1)
+
+        meshBoxLay.setColumnStretch(1, 10)
+
+        #####
+        widget = QtGui.QWidget()
+        lay = QtGui.QGridLayout(widget)
+        lay.addWidget(meshBox, 0, 0, 1, 1)
+        lay.addWidget(povrayBox, 1, 0, 1, 1)
+        lay.setRowStretch(10, 10)
+        return widget
+
+    def changeMeshType(self):
+        if self.povrayMesh.isChecked():
+            self.povraySmoothTriangles.setDisabled(True)
+        else:
+            self.povraySmoothTriangles.setDisabled(False)
+            
     def tabGeneral(self):
         self.patherror = QtGui.QLabel('')
         
@@ -246,7 +800,13 @@ class exportToPovrayColorsGui(QtGui.QWidget):
             FreeCAD.Console.PrintWarning("No objects found\n")
             return
         #
-        exportToPOVRAY(self.filePath.text(), projectObjects)
+
+        if self.povrayMesh.isChecked():
+            meshType = 1
+        else:
+            meshType =2
+
+        exportToPOVRAY(self.filePath.text(), projectObjects, self.meshTessellate.value(), self.povraySmoothTriangles.isChecked(), meshType)
     
 
 class separator(QtGui.QFrame):
